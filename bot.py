@@ -26,27 +26,9 @@ def twiml(resp: VoiceResponse) -> Response:
 # ─── Routes ──────────────────────────────────────────────────────────────
 @app.route("/voice", methods=["POST"])
 def voice():
-    """Main menu — DTMF or speech."""
+    """Direct to AI assistant — no menu."""
     resp = VoiceResponse()
-    gather = Gather(
-        input="dtmf speech",
-        num_digits=1,
-        action="/menu",
-        method="POST",
-        timeout=5,
-        speech_timeout="auto",
-        language="en-US",
-    )
-    gather.say(
-        "Welcome. Press or say 1 for hours. "
-        "Press or say 2 for support. "
-        "Press or say 3 to leave a message. "
-        "Press or say 4 to talk to our AI assistant.",
-        voice="Polly.Joanna",
-    )
-    resp.append(gather)
-    # Fallback if no input
-    resp.redirect("/voice")
+    resp.redirect("/ai")
     return twiml(resp)
 
 
