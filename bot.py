@@ -54,13 +54,13 @@ def menu():
         resp.say(
             "We are open Monday through Friday, 9 AM to 5 PM Eastern. "
             "Closed weekends and holidays.",
-            voice="Polly.Joanna",
+            voice="Polly.Brian",
         )
         resp.redirect("/voice")
 
     elif digit == "2":
         if FORWARD_NUMBER:
-            resp.say("Connecting you to support. Please hold.", voice="Polly.Joanna")
+            resp.say("Connecting you to support. Please hold.", voice="Polly.Brian")
             dial = Dial(
                 caller_id=TWILIO_NUMBER,
                 timeout=30,
@@ -70,11 +70,11 @@ def menu():
             dial.number(FORWARD_NUMBER)
             resp.append(dial)
         else:
-            resp.say("Support forwarding not configured.", voice="Polly.Joanna")
+            resp.say("Support forwarding not configured.", voice="Polly.Brian")
             resp.redirect("/voice")
 
     elif digit == "3":
-        resp.say("Leave your message after the beep. Press any key to finish.", voice="Polly.Joanna")
+        resp.say("Leave your message after the beep. Press any key to finish.", voice="Polly.Brian")
         resp.record(
             max_length=120,
             play_beep=True,
@@ -86,14 +86,14 @@ def menu():
 
     elif digit == "4":
         if OPENAI_API_KEY:
-            resp.say("Connecting you to our AI assistant.", voice="Polly.Joanna")
+            resp.say("Connecting you to our AI assistant.", voice="Polly.Brian")
             resp.redirect("/ai")
         else:
-            resp.say("AI assistant not configured.", voice="Polly.Joanna")
+            resp.say("AI assistant not configured.", voice="Polly.Brian")
             resp.redirect("/voice")
 
     else:
-        resp.say("Invalid selection.", voice="Polly.Joanna")
+        resp.say("Invalid selection.", voice="Polly.Brian")
         resp.redirect("/voice")
 
     return twiml(resp)
@@ -110,7 +110,7 @@ def voicemail():
     print(f"📞 Voicemail from {from_num}: {recording_url} ({duration}s)")
 
     resp = VoiceResponse()
-    resp.say("Thank you. Your message has been saved. Goodbye.", voice="Polly.Joanna")
+    resp.say("Thank you. Your message has been saved. Goodbye.", voice="Polly.Brian")
     return twiml(resp)
 
 
@@ -147,7 +147,7 @@ def ai_start():
         language="en-US",
         timeout=8,
     )
-    gather.say("Hi! I'm your AI assistant. What can I help with?", voice="Polly.Joanna")
+    gather.say("Hi! I'm your AI assistant. What can I help with?", voice="Polly.Brian")
     resp.append(gather)
     resp.redirect("/ai")
     return twiml(resp)
@@ -163,7 +163,7 @@ def ai_process():
 
     if not user_speech:
         resp = VoiceResponse()
-        resp.say("I didn't catch that.", voice="Polly.Joanna")
+        resp.say("I didn't catch that.", voice="Polly.Brian")
         resp.redirect("/ai")
         return twiml(resp)
 
@@ -188,7 +188,7 @@ def ai_process():
                         call = client.calls.create(
                             to=action["to"],
                             from_=TWILIO_NUMBER,
-                            twiml=f"<Response><Say voice='Polly.Joanna'>{action.get('message', 'Hello from Hermes')}</Say></Response>"
+                            twiml=f"<Response><Say voice='Polly.Brian'>{action.get('message', 'Hello from Hermes')}</Say></Response>"
                         )
                         print(f"Outgoing call initiated: {call.sid} to {action['to']}")
                     except Exception as e:
@@ -222,7 +222,7 @@ def ai_process():
         language="en-US",
         timeout=8,
     )
-    gather.say(ai_reply, voice="Polly.Joanna")
+    gather.say(ai_reply, voice="Polly.Brian")
     resp.append(gather)
     resp.redirect("/ai")
     return twiml(resp)

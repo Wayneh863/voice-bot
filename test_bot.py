@@ -66,10 +66,10 @@ def test_health_endpoint():
 def test_twiml_generation():
     """Test VoiceResponse builds correctly."""
     resp = VoiceResponse()
-    resp.say("Test", voice="Polly.Joanna")
+    resp.say("Test", voice="Polly.Brian")
     xml = str(resp)
     assert "<Say" in xml
-    assert "Polly.Joanna" in xml
+    assert "Polly.Brian" in xml
     print("✅ VoiceResponse generates valid TwiML")
 
 if __name__ == "__main__":
