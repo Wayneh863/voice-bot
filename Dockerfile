@@ -6,7 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # Also install Hermes API requirements
-COPY profiles/default/skills/hermes-api-server/requirements.txt /tmp/hermes-requirements.txt
+COPY hermes-api-server/requirements.txt /tmp/hermes-requirements.txt
 RUN pip install --no-cache-dir --prefix=/install -r /tmp/hermes-requirements.txt
 
 FROM python:3.12-slim
@@ -18,7 +18,7 @@ COPY --from=builder /install /usr/local
 
 # Copy both apps
 COPY bot.py .
-COPY profiles/default/skills/hermes-api-server/server.py hermes_server.py
+COPY hermes-api-server/server.py hermes_server.py
 
 # Non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
