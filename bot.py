@@ -172,25 +172,31 @@ def ai_process():
     if not api_key:
         ai_reply = "AI not configured. Set OPENROUTER_API_KEY."
     else:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://voice-bot-production-b61007bf.up.railway.app",
-                "X-Title": "Voice Bot",
-            },
-            json={
-                "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
-                "messages": [
-                    {"role": "system", "content": "You are a helpful phone assistant. Keep responses under 2 sentences. Be conversational."},
-                    {"role": "user", "content": user_speech},
-                ],
-                "max_tokens": 100,
-            },
-            timeout=10,
-        )
-        ai_reply = response.json()["choices"][0]["message"]["content"]
+        try:
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://voice-bot-production-b61007bf.up.railway.app",
+                    "X-Title": "Voice Bot",
+                },
+                json={
+                    "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+                    "messages": [
+                        {"role": "system", "content": "You are a helpful phone assistant. Keep responses under 2 sentences. Be conversational."},
+                        {"role": "user", "content": user_speech},
+                    ],
+                    "max_tokens": 100,
+                },
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+            ai_reply = data["choices"][0]["message"]["content"]
+        except Exception as e:
+            print(f"OpenRouter error: {e}")
+            ai_reply = "Sorry, I'm having trouble thinking right now."
 
     resp = VoiceResponse()
     gather = Gather(
