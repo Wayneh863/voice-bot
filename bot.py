@@ -21,25 +21,27 @@ AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_NUMBER = os.getenv("TWILIO_NUMBER")          # Your Twilio number (+1xxx)
 FORWARD_NUMBER = os.getenv("FORWARD_NUMBER")        # Where to forward "press 2"
 HERMES_API_URL = os.getenv("HERMES_API_URL", "https://hermes-api-production-acf3f0d9.up.railway.app")
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")  # ElevenLabs TTS
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")  # Default: Adam
 
 client = Client(ACCOUNT_SID, AUTH_TOKEN) if ACCOUNT_SID and AUTH_TOKEN else None
 
-# ─── ElevenLabs TTS Helper ───────────────────────────────────────────────
+# ─── Voice ────────────────────────────────────────────────────────────────
+VOICE = "Polly.Brian"  # Use Polly.Brian for reliable Twilio TTS
+
+# ─── ElevenLabs TTS Helper (for bridge mode only) ────────────────────────
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
 
 def elevenlabs_tts(text: str, voice_id: str = None) -> str:
     """Generate speech with ElevenLabs and return base64 data URI.
-    Limits text to ~200 chars to keep TwiML under size limits.
+    Limits text to ~100 chars to keep TwiML under size limits.
+    Used only for bridge mode where we can control audio hosting.
     """
     if not ELEVENLABS_API_KEY:
         return None
     
-    # Limit text length to keep audio small (~3 seconds max)
-    if len(text) > 200:
-        text = text[:197] + "..."
+    # Strict limit for bridge mode
+    if len(text) > 100:
+        text = text[:97] + "..."
     
     vid = voice_id or ELEVENLABS_VOICE_ID
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{vid}"
@@ -68,12 +70,22 @@ def elevenlabs_tts(text: str, voice_id: str = None) -> str:
     return None
 
 def say_with_elevenlabs(resp: VoiceResponse, text: str, voice_id: str = None) -> bool:
-    """Add ElevenLabs TTS to TwiML response. Returns True if successful."""
+    """Add ElevenLabs TTS to TwiML response. Returns True if successful.
+    Used for bridge mode only.
+    """
     audio_url = elevenlabs_tts(text, voice_id)
     if audio_url:
         resp.play(audio_url)
         return True
     return False
+
+def say(resp: VoiceResponse, text: str):
+    """Say text using default voice (Polly.Brian)."""
+    resp.say(text, voice=VOICE)
+
+def gather_say(gather: Gather, text: str):
+    """Say text in Gather using default voice."""
+    gather.say(text, voice=VOICE)
 
 # ─── Bridge Mode State ───────────────────────────────────────────────────
 # Queue for messages from you (Hermes) to speak
@@ -174,10 +186,10 @@ def bridge_start():
     try:
         text = speech_queue.get_nowait()
         if not say_with_elevenlabs(resp, text):
-            resp.say(text, voice="Polly.Brian")
+            say(resp, text)
     except queue.Empty:
         if not say_with_elevenlabs(resp, "Bridge mode active. Waiting for message."):
-            resp.say("Bridge mode active. Waiting for message.", voice="Polly.Brian")
+            say(resp, "Bridge mode active. Waiting for message.")
     
     # Listen for speech
     gather = Gather(
@@ -244,8 +256,7 @@ def ai_start():
         language="en-US",
         timeout=8,
     )
-    if not say_with_elevenlabs(gather, "Hi! I'm your AI assistant. What can I help with?"):
-        gather.say("Hi! I'm your AI assistant. What can I help with?", voice="Polly.Brian")
+    gather_say(gather, "Hi! I'm your AI assistant. What can I help with?")
     resp.append(gather)
     resp.redirect("/ai")
     return twiml(resp)
@@ -260,7 +271,7 @@ def ai_process():
 
     if not user_speech:
         resp = VoiceResponse()
-        resp.say("I didn't catch that.", voice="Polly.Brian")
+        resp.say("I didn't catch that.", voice=VOICE)
         resp.redirect("/ai")
         return twiml(resp)
 
@@ -283,14 +294,8 @@ def ai_process():
             if action["type"] == "call":
                 if client and TWILIO_NUMBER:
                     try:
-                        # Generate ElevenLabs audio for the call message
                         message = action.get('message', 'Hello from Hermes')
-                        audio_url = elevenlabs_tts(message)
-                        if audio_url:
-                            twiml_content = f"<Response><Play>{audio_url}</Play></Response>"
-                        else:
-                            twiml_content = f"<Response><Say voice='Polly.Brian'>{message}</Say></Response>"
-                        
+                        twiml_content = f"<Response><Say voice='{VOICE}'>{message}</Say></Response>"
                         call = client.calls.create(
                             to=action["to"],
                             from_=TWILIO_NUMBER,
@@ -326,8 +331,7 @@ def ai_process():
         language="en-US",
         timeout=8,
     )
-    if not say_with_elevenlabs(gather, ai_reply):
-        gather.say(ai_reply, voice="Polly.Brian")
+    gather_say(gather, ai_reply)
     resp.append(gather)
     resp.redirect("/ai")
     return twiml(resp)
@@ -352,16 +356,12 @@ def menu():
             digit = "4"
 
     if digit == "1":
-        resp.say(
-            "We are open Monday through Friday, 9 AM to 5 PM Eastern. "
-            "Closed weekends and holidays.",
-            voice="Polly.Brian",
-        )
+        say(resp, "We are open Monday through Friday, 9 AM to 5 PM Eastern. Closed weekends and holidays.")
         resp.redirect("/voice")
 
     elif digit == "2":
         if FORWARD_NUMBER:
-            resp.say("Connecting you to support. Please hold.", voice="Polly.Brian")
+            say(resp, "Connecting you to support. Please hold.")
             dial = Dial(
                 caller_id=TWILIO_NUMBER,
                 timeout=30,
@@ -371,11 +371,11 @@ def menu():
             dial.number(FORWARD_NUMBER)
             resp.append(dial)
         else:
-            resp.say("Support forwarding not configured.", voice="Polly.Brian")
+            say(resp, "Support forwarding not configured.")
             resp.redirect("/voice")
 
     elif digit == "3":
-        resp.say("Leave your message after the beep. Press any key to finish.", voice="Polly.Brian")
+        say(resp, "Leave your message after the beep. Press any key to finish.")
         resp.record(
             max_length=120,
             play_beep=True,
@@ -389,7 +389,7 @@ def menu():
         resp.redirect("/ai")
 
     else:
-        resp.say("Invalid selection.", voice="Polly.Brian")
+        say(resp, "Invalid selection.")
         resp.redirect("/voice")
 
     return twiml(resp)
@@ -402,7 +402,7 @@ def voicemail():
     print(f"📞 Voicemail from {from_num}: {recording_url} ({duration}s)")
 
     resp = VoiceResponse()
-    resp.say("Thank you. Your message has been saved. Goodbye.", voice="Polly.Brian")
+    say(resp, "Thank you. Your message has been saved. Goodbye.")
     return twiml(resp)
 
 @app.route("/transcription", methods=["POST"])
@@ -452,7 +452,7 @@ def health():
         "active_calls": len(active_calls)
     }
 
-# ─── Entrypoint ──────────────────────────────────────────────────────────
+# ─── Entrypoint ────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 3000))
