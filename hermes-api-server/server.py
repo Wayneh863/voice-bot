@@ -62,22 +62,34 @@ async def process_message(message: str, session_id: str) -> ChatResponse:
     # Check for call action
     if "call" in msg_lower:
         import re
-        numbers = re.findall(r'\+?1?\d{10}', message)
+        # Match various phone formats: 555-123-4567, (555) 123-4567, 5551234567, +15551234567
+        numbers = re.findall(r'(\+?1?[\s\-\(\)]*\d{3}[\s\-\)]*\d{3}[\s\-]*\d{4})', message)
         if numbers:
+            # Normalize to E.164
+            num = re.sub(r'\D', '', numbers[0])
+            if not num.startswith('1') and len(num) == 10:
+                num = '1' + num
+            if not num.startswith('+'):
+                num = '+' + num
             actions.append(Action(
                 type="call",
-                to=numbers[0],
+                to=num,
                 message="Hello from Hermes"
             ))
     
     # Check for SMS action
     if "text" in msg_lower or "sms" in msg_lower:
         import re
-        numbers = re.findall(r'\+?1?\d{10}', message)
+        numbers = re.findall(r'(\+?1?[\s\-\(\)]*\d{3}[\s\-\)]*\d{3}[\s\-]*\d{4})', message)
         if numbers:
+            num = re.sub(r'\D', '', numbers[0])
+            if not num.startswith('1') and len(num) == 10:
+                num = '1' + num
+            if not num.startswith('+'):
+                num = '+' + num
             actions.append(Action(
                 type="sms",
-                to=numbers[0],
+                to=num,
                 body=message
             ))
     
