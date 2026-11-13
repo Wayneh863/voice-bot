@@ -155,7 +155,7 @@ def ai_start():
 
 @app.route("/ai/process", methods=["POST"])
 def ai_process():
-    """Process speech → AI (OpenRouter) → respond."""
+    """Process speech → Hermes API → respond."""
     import requests
 
     user_speech = request.form.get("SpeechResult", "")
@@ -167,36 +167,31 @@ def ai_process():
         resp.redirect("/ai")
         return twiml(resp)
 
-    # Call OpenRouter (same model as Hermes: nvidia/nemotron-3-ultra-550b-a55b:free)
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        ai_reply = "AI not configured. Set OPENROUTER_API_KEY."
-    else:
-        try:
-            response = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://voice-bot-production-b61007bf.up.railway.app",
-                    "X-Title": "Voice Bot",
-                },
-                json={
-                    "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
-                    "messages": [
-                        {"role": "system", "content": "You are a helpful phone assistant. Keep responses under 2 sentences. Be conversational."},
-                        {"role": "user", "content": user_speech},
-                    ],
-                    "max_tokens": 100,
-                },
-                timeout=10,
-            )
-            response.raise_for_status()
-            data = response.json()
-            ai_reply = data["choices"][0]["message"]["content"]
-        except Exception as e:
-            print(f"OpenRouter error: {e}")
-            ai_reply = "Sorry, I'm having trouble thinking right now."
+    # Call Hermes API (same model, full tool access)
+    hermes_url = os.getenv("HERMES_API_URL", "https://hermes-api-production-acf3f0d9.up.railway.app")
+    try:
+        response = requests.post(
+            f"{hermes_url}/chat",
+            json={"message": user_speech},
+            timeout=15,
+        )
+        response.raise_for_status()
+        data = response.json()
+        ai_reply = data.get("response", "Done")
+        
+        # Execute any actions (call, sms, email)
+        for action in data.get("actions", []):
+            if action["type"] == "call":
+                # Would need Twilio client here to make outgoing call
+                print(f"Action: CALL to {action['to']} - {action.get('message', '')}")
+            elif action["type"] == "sms":
+                print(f"Action: SMS to {action['to']} - {action.get('body', '')}")
+            elif action["type"] == "email":
+                print(f"Action: EMAIL to {action['to']} - {action.get('subject', '')}: {action.get('body', '')}")
+                
+    except Exception as e:
+        print(f"Hermes API error: {e}")
+        ai_reply = "Sorry, I'm having trouble thinking right now."
 
     resp = VoiceResponse()
     gather = Gather(
