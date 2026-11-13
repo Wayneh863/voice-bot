@@ -155,8 +155,8 @@ def ai_start():
 
 @app.route("/ai/process", methods=["POST"])
 def ai_process():
-    """Process speech → AI → respond."""
-    from openai import OpenAI
+    """Process speech → AI (OpenRouter) → respond."""
+    import requests
 
     user_speech = request.form.get("SpeechResult", "")
     call_sid = request.form.get("CallSid")
@@ -167,17 +167,30 @@ def ai_process():
         resp.redirect("/ai")
         return twiml(resp)
 
-    # Call OpenAI
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    completion = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are a helpful phone assistant. Keep responses under 2 sentences."},
-            {"role": "user", "content": user_speech},
-        ],
-        max_tokens=100,
-    )
-    ai_reply = completion.choices[0].message.content
+    # Call OpenRouter (same model as Hermes: nvidia/nemotron-3-ultra-550b-a55b:free)
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        ai_reply = "AI not configured. Set OPENROUTER_API_KEY."
+    else:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://voice-bot-production-b61007bf.up.railway.app",
+                "X-Title": "Voice Bot",
+            },
+            json={
+                "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+                "messages": [
+                    {"role": "system", "content": "You are a helpful phone assistant. Keep responses under 2 sentences. Be conversational."},
+                    {"role": "user", "content": user_speech},
+                ],
+                "max_tokens": 100,
+            },
+            timeout=10,
+        )
+        ai_reply = response.json()["choices"][0]["message"]["content"]
 
     resp = VoiceResponse()
     gather = Gather(
