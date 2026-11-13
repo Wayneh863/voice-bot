@@ -182,12 +182,32 @@ def ai_process():
         # Execute any actions (call, sms, email)
         for action in data.get("actions", []):
             if action["type"] == "call":
-                # Would need Twilio client here to make outgoing call
-                print(f"Action: CALL to {action['to']} - {action.get('message', '')}")
+                # Make outgoing call via Twilio
+                if client and TWILIO_NUMBER:
+                    try:
+                        call = client.calls.create(
+                            to=action["to"],
+                            from_=TWILIO_NUMBER,
+                            twiml=f"<Response><Say voice='Polly.Joanna'>{action.get('message', 'Hello from Hermes')}</Say></Response>"
+                        )
+                        print(f"Outgoing call initiated: {call.sid} to {action['to']}")
+                    except Exception as e:
+                        print(f"Call error: {e}")
             elif action["type"] == "sms":
-                print(f"Action: SMS to {action['to']} - {action.get('body', '')}")
+                # Send SMS via Twilio
+                if client and TWILIO_NUMBER:
+                    try:
+                        msg = client.messages.create(
+                            to=action["to"],
+                            from_=TWILIO_NUMBER,
+                            body=action.get("body", "Message from Hermes")
+                        )
+                        print(f"SMS sent: {msg.sid} to {action['to']}")
+                    except Exception as e:
+                        print(f"SMS error: {e}")
             elif action["type"] == "email":
-                print(f"Action: EMAIL to {action['to']} - {action.get('subject', '')}: {action.get('body', '')}")
+                # Send email (placeholder - would need SMTP config)
+                print(f"EMAIL to {action['to']}: {action.get('subject', '')} - {action.get('body', '')}")
                 
     except Exception as e:
         print(f"Hermes API error: {e}")
