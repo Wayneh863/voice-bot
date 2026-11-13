@@ -1,0 +1,9 @@
+# Twilio Voice Bot — .gitignore
+.env
+*.pyc
+__pycache__/
+.venv/
+venv/
+.env.local
+*.log
+.DS_Store
