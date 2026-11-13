@@ -8,6 +8,7 @@ import os
 import queue
 import threading
 import time
+import requests
 from flask import Flask, request, Response, jsonify
 from twilio.twiml.voice_response import VoiceResponse, Gather, Dial, Record, Say, Play
 from twilio.rest import Client
@@ -20,8 +21,55 @@ AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_NUMBER = os.getenv("TWILIO_NUMBER")          # Your Twilio number (+1xxx)
 FORWARD_NUMBER = os.getenv("FORWARD_NUMBER")        # Where to forward "press 2"
 HERMES_API_URL = os.getenv("HERMES_API_URL", "https://hermes-api-production-acf3f0d9.up.railway.app")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")  # ElevenLabs TTS
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")  # Default: Adam
 
 client = Client(ACCOUNT_SID, AUTH_TOKEN) if ACCOUNT_SID and AUTH_TOKEN else None
+
+# ─── ElevenLabs TTS Helper ───────────────────────────────────────────────
+def elevenlabs_tts(text: str, voice_id: str = None) -> str:
+    """Generate speech with ElevenLabs and return audio URL.
+    Returns TwiML-compatible audio URL (data URI for small clips, or hosted URL).
+    For production, you'd host the audio file and return the URL.
+    """
+    if not ELEVENLABS_API_KEY:
+        return None
+    
+    vid = voice_id or ELEVENLABS_VOICE_ID
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{vid}"
+    headers = {
+        "Accept": "audio/mpeg",
+        "Content-Type": "application/json",
+        "xi-api-key": ELEVENLABS_API_KEY,
+    }
+    data = {
+        "text": text,
+        "model_id": "eleven_multilingual_v2",
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.75,
+        },
+    }
+    
+    try:
+        resp = requests.post(url, json=data, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            # For TwiML, we need to host the audio. 
+            # For now, return base64 data URI (works for small clips)
+            import base64
+            audio_b64 = base64.b64encode(resp.content).decode()
+            return f"data:audio/mpeg;base64,{audio_b64}"
+    except Exception as e:
+        print(f"ElevenLabs TTS error: {e}")
+    return None
+
+def say_with_elevenlabs(resp: VoiceResponse, text: str, voice_id: str = None) -> bool:
+    """Add ElevenLabs TTS to TwiML response. Returns True if successful."""
+    audio_url = elevenlabs_tts(text, voice_id)
+    if audio_url:
+        resp.play(audio_url)
+        return True
+    return False
 
 # ─── Bridge Mode State ───────────────────────────────────────────────────
 # Queue for messages from you (Hermes) to speak
@@ -121,9 +169,11 @@ def bridge_start():
     # Check for queued message
     try:
         text = speech_queue.get_nowait()
-        resp.say(text, voice="Polly.Brian")
+        if not say_with_elevenlabs(resp, text):
+            resp.say(text, voice="Polly.Brian")
     except queue.Empty:
-        resp.say("Bridge mode active. Waiting for message.", voice="Polly.Brian")
+        if not say_with_elevenlabs(resp, "Bridge mode active. Waiting for message."):
+            resp.say("Bridge mode active. Waiting for message.", voice="Polly.Brian")
     
     # Listen for speech
     gather = Gather(
@@ -190,7 +240,8 @@ def ai_start():
         language="en-US",
         timeout=8,
     )
-    gather.say("Hi! I'm your AI assistant. What can I help with?", voice="Polly.Brian")
+    if not say_with_elevenlabs(gather, "Hi! I'm your AI assistant. What can I help with?"):
+        gather.say("Hi! I'm your AI assistant. What can I help with?", voice="Polly.Brian")
     resp.append(gather)
     resp.redirect("/ai")
     return twiml(resp)
@@ -228,10 +279,18 @@ def ai_process():
             if action["type"] == "call":
                 if client and TWILIO_NUMBER:
                     try:
+                        # Generate ElevenLabs audio for the call message
+                        message = action.get('message', 'Hello from Hermes')
+                        audio_url = elevenlabs_tts(message)
+                        if audio_url:
+                            twiml_content = f"<Response><Play>{audio_url}</Play></Response>"
+                        else:
+                            twiml_content = f"<Response><Say voice='Polly.Brian'>{message}</Say></Response>"
+                        
                         call = client.calls.create(
                             to=action["to"],
                             from_=TWILIO_NUMBER,
-                            twiml=f"<Response><Say voice='Polly.Brian'>{action.get('message', 'Hello from Hermes')}</Say></Response>"
+                            twiml=twiml_content
                         )
                         print(f"Outgoing call initiated: {call.sid} to {action['to']}")
                     except Exception as e:
@@ -263,7 +322,8 @@ def ai_process():
         language="en-US",
         timeout=8,
     )
-    gather.say(ai_reply, voice="Polly.Brian")
+    if not say_with_elevenlabs(gather, ai_reply):
+        gather.say(ai_reply, voice="Polly.Brian")
     resp.append(gather)
     resp.redirect("/ai")
     return twiml(resp)
