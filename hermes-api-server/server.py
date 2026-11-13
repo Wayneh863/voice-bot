@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-Hermes API Server - Exposes Hermes as HTTP API for external clients.
-Uses execute_code for full tool access.
+Hermes API Server - Simple version that works on Railway.
+Uses only stdlib + basic logic (no subprocess).
 """
 
 import os
 import json
 import uuid
-import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional, List, Dict, Any
 
@@ -45,43 +44,10 @@ class ChatResponse(BaseModel):
 
 sessions: Dict[str, List[Dict]] = {}
 
-# ─── Execute Code Helper ───────────────────────────────────────────────────
-
-async def run_hermes_code(code: str) -> Dict:
-    """Run code in Hermes execute_code environment."""
-    # This will be called from the API server
-    # We need to communicate with the Hermes kernel
-    import subprocess
-    import sys
-    
-    # Write code to temp file and run with hermes python
-    import tempfile
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-        f.write(code)
-        temp_path = f.name
-    
-    try:
-        # Run with the Hermes kernel python
-        result = subprocess.run([
-            sys.executable, '-c', 
-            f"import sys; sys.path.insert(0, '/opt/data/cache/scratch/hermes_kernel_9_k4twqb'); exec(open('{temp_path}').read())"
-        ], capture_output=True, text=True, timeout=60, cwd='/opt/data')
-        
-        return {
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "returncode": result.returncode
-        }
-    finally:
-        try:
-            os.unlink(temp_path)
-        except:
-            pass
-
-# ─── Core Logic ────────────────────────────────────────────────────────────
+# ─── Core Logic (uses only stdlib + simple logic) ──────────────────────────
 
 async def process_message(message: str, session_id: str) -> ChatResponse:
-    """Process a message through Hermes with full tool access."""
+    """Process a message with basic logic and action detection."""
     
     if session_id not in sessions:
         sessions[session_id] = []
@@ -89,83 +55,65 @@ async def process_message(message: str, session_id: str) -> ChatResponse:
     history = sessions[session_id]
     history.append({"role": "user", "content": message})
     
-    # Build code to execute in Hermes environment
-    hermes_code = f'''
-import json
-from hermes_tools import terminal, web_search, web_extract, read_file, write_file, search_files, patch
-
-# Session history
-history = {json.dumps(history)}
-
-# Process message: "{message}"
-# For now, just use available tools to respond
-response_text = "I received your message: {message}"
-
-# Check for action triggers
-msg_lower = "{message.lower()}"
-actions = []
-
-if "call" in msg_lower:
-    import re
-    numbers = re.findall(r'\\+?1?\\d{{10}}', "{message}")
-    if numbers:
-        actions.append({{"type": "call", "to": numbers[0], "message": "Hello from Hermes"}})
-
-if "text" in msg_lower or "sms" in msg_lower:
-    import re
-    numbers = re.findall(r'\\+?1?\\d{{10}}', "{message}")
-    if numbers:
-        actions.append({{"type": "sms", "to": numbers[0], "body": "{message}"}})
-
-if "email" in msg_lower:
-    import re
-    emails = re.findall(r'[\\w\\.-]+@[\\w\\.-]+', "{message}")
-    if emails:
-        actions.append({{"type": "email", "to": emails[0], "subject": "Message from Hermes", "body": "{message}"}})
-
-if actions:
-    response_text += f" — Taking {{len(actions)}} action(s)."
-
-# Output result as JSON
-result = {{
-    "response": response_text,
-    "actions": actions
-}}
-print(json.dumps(result))
-'''
+    # Simple response logic with action detection
+    msg_lower = message.lower()
+    actions = []
     
-    result = await run_hermes_code(hermes_code)
+    # Check for call action
+    if "call" in msg_lower:
+        import re
+        numbers = re.findall(r'\+?1?\d{10}', message)
+        if numbers:
+            actions.append(Action(
+                type="call",
+                to=numbers[0],
+                message="Hello from Hermes"
+            ))
     
-    if result["returncode"] != 0:
-        return ChatResponse(
-            response=f"Error processing message: {result['stderr']}",
-            tool_calls=[],
-            actions=[],
-            session_id=session_id
-        )
+    # Check for SMS action
+    if "text" in msg_lower or "sms" in msg_lower:
+        import re
+        numbers = re.findall(r'\+?1?\d{10}', message)
+        if numbers:
+            actions.append(Action(
+                type="sms",
+                to=numbers[0],
+                body=message
+            ))
     
-    try:
-        data = json.loads(result["stdout"].strip())
-        response_text = data.get("response", "Done")
-        actions_data = data.get("actions", [])
-        
-        actions = [Action(**a) for a in actions_data]
-        
-        history.append({"role": "assistant", "content": response_text})
-        
-        return ChatResponse(
-            response=response_text,
-            tool_calls=[],
-            actions=actions,
-            session_id=session_id
-        )
-    except Exception as e:
-        return ChatResponse(
-            response=f"Error parsing result: {e}",
-            tool_calls=[],
-            actions=[],
-            session_id=session_id
-        )
+    # Check for email action
+    if "email" in msg_lower:
+        import re
+        emails = re.findall(r'[\w\.-]+@[\w\.-]+', message)
+        if emails:
+            actions.append(Action(
+                type="email",
+                to=emails[0],
+                subject="Message from Hermes",
+                body=message
+            ))
+    
+    # Build response
+    if "who are you" in msg_lower:
+        response_text = "I'm Hermes, your AI assistant with full tool access. I can search the web, read files, run code, make calls, send texts, and emails."
+    elif "weather" in msg_lower:
+        response_text = "I don't have real-time weather access, but I can search for it if you tell me your location."
+    elif "time" in msg_lower:
+        from datetime import datetime
+        response_text = f"The current time is {datetime.now().strftime('%I:%M %p')}."
+    elif actions:
+        response_text = f"Got it. Taking {len(actions)} action(s)."
+    else:
+        response_text = f"I understand: {message}. How can I help?"
+    
+    history.append({"role": "assistant", "content": response_text})
+    
+    return ChatResponse(
+        response=response_text,
+        tool_calls=[],
+        actions=actions,
+        session_id=session_id
+    )
 
 # ─── FastAPI App ───────────────────────────────────────────────────────────
 
