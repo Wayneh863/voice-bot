@@ -125,4 +125,9 @@ def tts_direct():
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8081"))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    # Use gunicorn in production for better performance
+    import sys
+    if os.getenv("RAILWAY_ENVIRONMENT") == "production":
+        os.execvpe("gunicorn", ["gunicorn", "--bind", f"0.0.0.0:{port}", "--workers", "2", "--threads", "4", "--timeout", "60", "tts_server:app"], os.environ)
+    else:
+        app.run(host="0.0.0.0", port=port, debug=False)
