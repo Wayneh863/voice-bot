@@ -21,30 +21,55 @@ AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_NUMBER = os.getenv("TWILIO_NUMBER")          # Your Twilio number (+1xxx)
 FORWARD_NUMBER = os.getenv("FORWARD_NUMBER")        # Where to forward "press 2"
 HERMES_API_URL = os.getenv("HERMES_API_URL", "https://hermes-api-production-acf3f0d9.up.railway.app")
-TTS_SERVER_URL = os.getenv("TTS_SERVER_URL", "http://localhost:8081")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")  # ElevenLabs TTS
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")  # Default: Adam
 
 client = Client(ACCOUNT_SID, AUTH_TOKEN) if ACCOUNT_SID and AUTH_TOKEN else None
 
 # ─── ElevenLabs TTS Helper ───────────────────────────────────────────────
-TTS_SERVER_URL = os.getenv("TTS_SERVER_URL", "http://localhost:8081")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
 
-def get_elevenlabs_audio_url(text: str, voice_id: str = None) -> str:
-    """Get audio URL from TTS server."""
+def elevenlabs_tts(text: str, voice_id: str = None) -> str:
+    """Generate speech with ElevenLabs and return base64 data URI.
+    Limits text to ~200 chars to keep TwiML under size limits.
+    """
+    if not ELEVENLABS_API_KEY:
+        return None
+    
+    # Limit text length to keep audio small (~3 seconds max)
+    if len(text) > 200:
+        text = text[:197] + "..."
+    
+    vid = voice_id or ELEVENLABS_VOICE_ID
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{vid}"
+    headers = {
+        "Accept": "audio/mpeg",
+        "Content-Type": "application/json",
+        "xi-api-key": ELEVENLABS_API_KEY,
+    }
+    data = {
+        "text": text,
+        "model_id": "eleven_multilingual_v2",
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.75,
+        },
+    }
+    
     try:
-        resp = requests.post(
-            f"{TTS_SERVER_URL}/tts",
-            json={"text": text, "voice_id": voice_id},
-            timeout=15
-        )
+        resp = requests.post(url, json=data, headers=headers, timeout=10)
         if resp.status_code == 200:
-            return resp.json().get("audio_url")
+            import base64
+            audio_b64 = base64.b64encode(resp.content).decode()
+            return f"data:audio/mpeg;base64,{audio_b64}"
     except Exception as e:
-        print(f"TTS server error: {e}")
+        print(f"ElevenLabs TTS error: {e}")
     return None
 
 def say_with_elevenlabs(resp: VoiceResponse, text: str, voice_id: str = None) -> bool:
     """Add ElevenLabs TTS to TwiML response. Returns True if successful."""
-    audio_url = get_elevenlabs_audio_url(text, voice_id)
+    audio_url = elevenlabs_tts(text, voice_id)
     if audio_url:
         resp.play(audio_url)
         return True
@@ -260,7 +285,7 @@ def ai_process():
                     try:
                         # Generate ElevenLabs audio for the call message
                         message = action.get('message', 'Hello from Hermes')
-                        audio_url = get_elevenlabs_audio_url(message)
+                        audio_url = elevenlabs_tts(message)
                         if audio_url:
                             twiml_content = f"<Response><Play>{audio_url}</Play></Response>"
                         else:
