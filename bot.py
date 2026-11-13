@@ -53,12 +53,16 @@ def bridge_speak():
 
 @app.route("/bridge/next", methods=["GET"])
 def bridge_next():
-    """Voice bot polls this to get next message to speak."""
+    """Voice bot polls this to get next message to speak (peek, don't consume)."""
     try:
-        text = speech_queue.get_nowait()
-        return jsonify({"text": text})
-    except queue.Empty:
-        return jsonify({"text": None})
+        # Peek at queue without consuming
+        with speech_queue.mutex:
+            if speech_queue.queue:
+                text = speech_queue.queue[0]
+                return jsonify({"text": text})
+    except:
+        pass
+    return jsonify({"text": None})
 
 @app.route("/bridge/heard", methods=["POST"])
 def bridge_heard():
